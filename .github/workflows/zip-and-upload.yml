@@ -54,38 +54,38 @@ jobs:
           STORED_DEV_SHA1: ${{ steps.read_stored_hashes.outputs.STORED_DEV_SHA1 }}
         run: |
           if [ "$CURRENT_DEV_SHA1" != "$STORED_DEV_SHA1" ]; then
-          echo "Dev pack has changed. Zipping and preparing for upload..."
-          cd minecraft/dev
-          zip -r ../../pack-dev.zip .
-          cd ../.. 
-          mkdir -p upload_dev
-          mv pack-dev.zip upload_dev/
-          echo "UPLOAD_DEV=true" >> $GITHUB_OUTPUT
-          echo "NEW_DEV_SHA1=$CURRENT_DEV_SHA1" >> $GITHUB_OUTPUT 
+            echo "Dev pack has changed. Zipping and preparing for upload..."
+            cd minecraft/dev
+            zip -r ../../pack-dev.zip .
+            cd ../.. 
+            mkdir -p upload_dev
+            mv pack-dev.zip upload_dev/
+            echo "UPLOAD_DEV=true" >> $GITHUB_OUTPUT
+            echo "NEW_DEV_SHA1=$CURRENT_DEV_SHA1" >> $GITHUB_OUTPUT 
           else
-          echo "Dev pack has not changed. Skipping upload."
-          echo "UPLOAD_DEV=false" >> $GITHUB_OUTPUT
+            echo "Dev pack has not changed. Skipping upload."
+            echo "UPLOAD_DEV=false" >> $GITHUB_OUTPUT
           fi
 
-          - name: Process Prod Pack
-            id: prod_pack_process
-            env:
-              CURRENT_PROD_SHA1: ${{ steps.calculate_hashes.outputs.PROD_SHA1 }}
-              STORED_PROD_SHA1: ${{ steps.read_stored_hashes.outputs.STORED_PROD_SHA1 }}
-            run: |
-              if [ "$CURRENT_PROD_SHA1" != "$STORED_PROD_SHA1" ]; then
-                echo "Prod pack has changed. Zipping and preparing for upload..."
-                cd minecraft/prod
-                zip -r ../../pack-prod.zip .
-                cd ../..  
-                mkdir -p upload_prod
-                mv pack-prod.zip upload_prod/
-                echo "UPLOAD_PROD=true" >> $GITHUB_OUTPUT
-                echo "NEW_PROD_SHA1=$CURRENT_PROD_SHA1" >> $GITHUB_OUTPUT
-              else
-                echo "Prod pack has not changed. Skipping upload."
-                echo "UPLOAD_PROD=false" >> $GITHUB_OUTPUT
-              fi
+      - name: Process Prod Pack
+        id: prod_pack_process
+        env:
+          CURRENT_PROD_SHA1: ${{ steps.calculate_hashes.outputs.PROD_SHA1 }}
+          STORED_PROD_SHA1: ${{ steps.read_stored_hashes.outputs.STORED_PROD_SHA1 }}
+        run: |
+          if [ "$CURRENT_PROD_SHA1" != "$STORED_PROD_SHA1" ]; then
+            echo "Prod pack has changed. Zipping and preparing for upload..."
+            cd minecraft/prod
+            zip -r ../../pack-prod.zip .
+            cd ../..  
+            mkdir -p upload_prod
+            mv pack-prod.zip upload_prod/
+            echo "UPLOAD_PROD=true" >> $GITHUB_OUTPUT
+            echo "NEW_PROD_SHA1=$CURRENT_PROD_SHA1" >> $GITHUB_OUTPUT
+          else
+            echo "Prod pack has not changed. Skipping upload."
+            echo "UPLOAD_PROD=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload dev pack via SFTP
         if: steps.dev_pack_process.outputs.UPLOAD_DEV == 'true'
