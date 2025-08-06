@@ -1,0 +1,18 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "server:custom/ranks/developer.png",
+      "ascent": 7,
+      "height": 7,
+      "chars": ["\uE001"]
+    },
+    {
+      "type": "bitmap",
+      "file": "server:custom/ranks/builder.png",
+      "ascent": 7,
+      "height": 7,
+      "chars": ["\uE002"]
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+on:
+  push:
+    branches:
+      - master
+jobs:
+  zip-and-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Git User
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+      - name: Install JQ
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Calculate Current Pack Hashes
+        id: calculate_hashes
+        run: |
+          DEV_SHA1=$(git rev-parse HEAD:minecraft/dev)
+          PROD_SHA1=$(git rev-parse HEAD:minecraft/prod)
+          echo "DEV_SHA1=$DEV_SHA1" >> $GITHUB_OUTPUT
+          echo "PROD_SHA1=$PROD_SHA1" >> $GITHUB_OUTPUT
+          echo "Current Dev SHA1: $DEV_SHA1"
+          echo "Current Prod SHA1: $PROD_SHA1"
+
+      - name: Read Stored Hashes
+        id: read_stored_hashes
+        run: |
+          STORED_DEV_SHA1=""
+          STORED_PROD_SHA1=""
+          if [ -f sha1_hashes.json ]; then
+            STORED_DEV_SHA1=$(jq -r '.dev // ""' sha1_hashes.json)
+            STORED_PROD_SHA1=$(jq -r '.prod // ""' sha1_hashes.json)
+          else
+            echo "{}" > sha1_hashes.json
+          fi
+          echo "STORED_DEV_SHA1=$STORED_DEV_SHA1" >> $GITHUB_OUTPUT
+          echo "STORED_PROD_SHA1=$STORED_PROD_SHA1" >> $GITHUB_OUTPUT
+          echo "Stored Dev SHA1: $STORED_DEV_SHA1"
+          echo "Stored Prod SHA1: $STORED_PROD_SHA1"
+
+      - name: Process Dev Pack
+        id: dev_pack_process
+        env:
+          CURRENT_DEV_SHA1: ${{ steps.calculate_hashes.outputs.DEV_SHA1 }}
+          STORED_DEV_SHA1: ${{ steps.read_stored_hashes.outputs.STORED_DEV_SHA1 }}
+        run: |
+          if [ "$CURRENT_DEV_SHA1" != "$STORED_DEV_SHA1" ]; then
+          echo "Dev pack has changed. Zipping and preparing for upload..."
+          cd minecraft/dev
+          zip -r ../../pack-dev.zip .
+          cd ../.. 
+          mkdir -p upload_dev
+          mv pack-dev.zip upload_dev/
+          echo "UPLOAD_DEV=true" >> $GITHUB_OUTPUT
+          echo "NEW_DEV_SHA1=$CURRENT_DEV_SHA1" >> $GITHUB_OUTPUT 
+          else
+          echo "Dev pack has not changed. Skipping upload."
+          echo "UPLOAD_DEV=false" >> $GITHUB_OUTPUT
+          fi
+
+          - name: Process Prod Pack
+            id: prod_pack_process
+            env:
+              CURRENT_PROD_SHA1: ${{ steps.calculate_hashes.outputs.PROD_SHA1 }}
+              STORED_PROD_SHA1: ${{ steps.read_stored_hashes.outputs.STORED_PROD_SHA1 }}
+            run: |
+              if [ "$CURRENT_PROD_SHA1" != "$STORED_PROD_SHA1" ]; then
+                echo "Prod pack has changed. Zipping and preparing for upload..."
+                cd minecraft/prod
+                zip -r ../../pack-prod.zip .
+                cd ../..  
+                mkdir -p upload_prod
+                mv pack-prod.zip upload_prod/
+                echo "UPLOAD_PROD=true" >> $GITHUB_OUTPUT
+                echo "NEW_PROD_SHA1=$CURRENT_PROD_SHA1" >> $GITHUB_OUTPUT
+              else
+                echo "Prod pack has not changed. Skipping upload."
+                echo "UPLOAD_PROD=false" >> $GITHUB_OUTPUT
+              fi
+
+      - name: Upload dev pack via SFTP
+        if: steps.dev_pack_process.outputs.UPLOAD_DEV == 'true'
+        uses: milanmk/actions-file-deployer@master
+        with:
+          sync: full
+          remote-protocol: sftp
+          remote-host: ${{ secrets.SFTP_HOST }}
+          remote-user: ${{ secrets.SFTP_USER }}
+          remote-password: ${{ secrets.SFTP_PASSWORD }}
+          remote-port: ${{ secrets.SFTP_PORT }}
+          local-path: upload_dev
+          remote-path: ${{ secrets.SFTP_PATH }}/dev/
+
+      - name: Upload prod pack via SFTP
+        if: steps.prod_pack_process.outputs.UPLOAD_PROD == 'true'
+        uses: milanmk/actions-file-deployer@master
+        with:
+          sync: full
+          remote-protocol: sftp
+          remote-host: ${{ secrets.SFTP_HOST }}
+          remote-user: ${{ secrets.SFTP_USER }}
+          remote-password: ${{ secrets.SFTP_PASSWORD }}
+          remote-port: ${{ secrets.SFTP_PORT }}
+          local-path: upload_prod
+          remote-path: ${{ secrets.SFTP_PATH }}/prod/
+
+      - name: Update SHA1 Hashes File
+        id: update_hashes_file
+        if: steps.dev_pack_process.outputs.NEW_DEV_SHA1 || steps.prod_pack_process.outputs.NEW_PROD_SHA1
+        run: |
+          JSON_CONTENT=$(cat sha1_hashes.json)
+
+          if [ "${{ steps.dev_pack_process.outputs.NEW_DEV_SHA1 }}" != "" ]; then
+            JSON_CONTENT=$(echo "$JSON_CONTENT" | jq --arg sha1 "${{ steps.dev_pack_process.outputs.NEW_DEV_SHA1 }}" '.dev = $sha1')
+          fi
+
+          if [ "${{ steps.prod_pack_process.outputs.NEW_PROD_SHA1 }}" != "" ]; then
+            JSON_CONTENT=$(echo "$JSON_CONTENT" | jq --arg sha1 "${{ steps.prod_pack_process.outputs.NEW_PROD_SHA1 }}" '.prod = $sha1')
+          fi
+
+          echo "$JSON_CONTENT" > sha1_hashes.json
+          echo "SHA1_HASHES_UPDATED=true" >> $GITHUB_OUTPUT 
+
+      - name: Commit and Push Updated Hashes
+        if: steps.update_hashes_file.outputs.SHA1_HASHES_UPDATED == 'true'
+        run: |
+          git add sha1_hashes.json
+          git commit -m "chore: Update Minecraft pack SHA1 hashes [skip ci]" || echo "No changes to commit"
+          git push
